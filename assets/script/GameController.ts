@@ -586,7 +586,7 @@ export class GameController extends Component {
             while (row >= 0 && row < this.rows && col >= 0 && col < this.cols) {
                 const other = grid[row][col];
                 if (other) {
-                    const matched = !other.eliminated && other.matchKey === tile.matchKey;
+                    const matched = !other.eliminated && other.typeId === tile.typeId;
                     if (matched) {
                         return other;
                     }

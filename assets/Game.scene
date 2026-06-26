@@ -3493,7 +3493,6 @@
     },
     "_enabled": true,
     "__prefab": null,
-    "matchDebug": true,
     "boardRoot": {
       "__id__": 47
     },

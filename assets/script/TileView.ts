@@ -34,7 +34,6 @@ export class TileView extends Component {
 
     public controller: GameController | null = null;
     public typeId = -1;
-    public matchKey = '';
     public row = -1;
     public col = -1;
     public layer = -1;
@@ -96,7 +95,6 @@ export class TileView extends Component {
 
     public setType(typeId: number, frame: SpriteFrame): void {
         this.typeId = typeId;
-        this.matchKey = frame.uuid || `type-${typeId}`;
         if (this.face) {
             this.face.spriteFrame = frame;
             this.face.color = Color.WHITE;
