@@ -459,14 +459,10 @@ export class GameController extends Component {
         const origins = new Map<TileView, TileOrigin>(
             drag.segment.map(tile => [tile, { row: tile.row, col: tile.col }]),
         );
-        const affectedRows = new Set(drag.segment.map(tile => tile.row));
-        const affectedCols = new Set(drag.segment.map(tile => tile.col));
         for (const tile of drag.segment) grid[tile.row][tile.col] = null;
         for (const tile of drag.segment) {
             tile.row += dr;
             tile.col += dc;
-            affectedRows.add(tile.row);
-            affectedCols.add(tile.col);
             grid[tile.row][tile.col] = tile;
             Tween.stopAllByTarget(tile.node);
             tween(tile.node)
@@ -479,12 +475,7 @@ export class GameController extends Component {
                 if (!isValid(tile, true) || !isValid(tile.node, true) || tile.eliminated) continue;
                 tile.node.setPosition(this.cellPosition(tile.row, tile.col, tile.layer));
             }
-            const affectedTiles = this.collectAffectedTilesAfterDrag(
-                drag.segment,
-                affectedRows,
-                affectedCols,
-            );
-            const dragPairs = this.collectDragPairs(drag.segment, affectedTiles);
+            const dragPairs = this.collectDragPairs(drag.segment);
             if (dragPairs.length > 0) {
                 this.eliminateFromMovedTiles(drag.segment, origins, dragPairs);
                 return;
@@ -525,59 +516,12 @@ export class GameController extends Component {
         }
     }
 
-    private collectAffectedTilesAfterDrag(
-        movedTiles: TileView[],
-        rows: Set<number>,
-        cols: Set<number>,
-    ): TileView[] {
-        const grid = this.grids[this.currentLayer];
-        const affected = new Set<TileView>();
-
-        for (const tile of movedTiles) {
-            if (!isValid(tile, true) || tile.eliminated) continue;
-            affected.add(tile);
-        }
-
-        for (const row of rows) {
-            for (let col = 0; col < this.cols; col++) {
-                const tile = grid[row][col];
-                if (tile && !tile.eliminated) affected.add(tile);
-            }
-        }
-        for (const col of cols) {
-            for (let row = 0; row < this.rows; row++) {
-                const tile = grid[row][col];
-                if (tile && !tile.eliminated) affected.add(tile);
-            }
-        }
-        return Array.from(affected);
-    }
-
     private tryTapEliminate(tile: TileView): void {
         if (!this.canInteract(tile)) return;
         const pair = this.findPairForTile(this.grids[this.currentLayer], tile);
         if (pair) {
             this.eliminatePairs([[tile, pair]]);
         }
-    }
-
-    private collectPairsFromTiles(tiles: TileView[]): Array<[TileView, TileView]> {
-        const grid = this.grids[this.currentLayer];
-        const pairs: Array<[TileView, TileView]> = [];
-        const used = new Set<TileView>();
-        for (const tile of tiles) {
-            if (tile.eliminated
-                || tile.layer !== this.currentLayer
-                || used.has(tile)
-                || grid[tile.row]?.[tile.col] !== tile) continue;
-            const match = this.findPairForTile(grid, tile);
-            if (match && !used.has(match)) {
-                used.add(tile);
-                used.add(match);
-                pairs.push([tile, match]);
-            }
-        }
-        return pairs;
     }
 
     private collectOneRoundPairsFromMoved(movedTiles: TileView[]): Array<[TileView, TileView]> {
@@ -603,15 +547,8 @@ export class GameController extends Component {
         return pairs;
     }
 
-    private collectDragPairs(
-        movedTiles: TileView[],
-        affectedTiles: TileView[],
-    ): Array<[TileView, TileView]> {
-        const movedPairs = this.collectOneRoundPairsFromMoved(movedTiles);
-        const directPairs = this.collectDirectPairs(affectedTiles);
-        const rayPairs = this.collectPairsFromTiles(affectedTiles);
-        const result = movedPairs;
-        return result;
+    private collectDragPairs(movedTiles: TileView[]): Array<[TileView, TileView]> {
+        return this.collectOneRoundPairsFromMoved(movedTiles);
     }
 
     private eliminateFromMovedTiles(
@@ -624,13 +561,7 @@ export class GameController extends Component {
             return;
         }
 
-        const matched = new Set(pairs.flatMap(([a, b]) => [a, b]));
-        const unmatchedMoved = movedTiles.filter(tile => !matched.has(tile));
-        this.eliminatePairs(pairs, () => {
-            if (unmatchedMoved.length > 0) {
-            } else {
-            }
-        });
+        this.eliminatePairs(pairs);
     }
 
     private isTileOnOwnLayerGrid(tile: TileView): boolean {
@@ -727,99 +658,8 @@ export class GameController extends Component {
         this.cascadeRows.clear();
         this.cascadeCols.clear();
         this.cascadeLayer = -1;
-        try {
-            const cascadeTiles = this.getCurrentTiles();
-            const cascadeDirectPairs = this.collectDirectPairs(cascadeTiles);
-            const cascadeRayPairs = this.collectPairsFromTiles(cascadeTiles);
-            const cascadePairs = this.mergePairs(cascadeDirectPairs, cascadeRayPairs);
-            if (cascadePairs.length > 0) {
-                this.eliminatePairs(cascadePairs);
-                return;
-            }
-            this.inputLocked = false;
-            this.ensurePlayable();
-        } catch (error) {
-            this.inputLocked = false;
-            this.ensurePlayable();
-        }
-    }
-
-    private collectDirectPairs(tiles: TileView[]): Array<[TileView, TileView]> {
-        const pairs: Array<[TileView, TileView]> = [];
-        const used = new Set<TileView>();
-        const candidates = tiles.filter(tile =>
-            isValid(tile, true)
-            && isValid(tile.node, true)
-            && !tile.eliminated
-            && tile.layer === this.currentLayer);
-
-        for (let i = 0; i < candidates.length; i++) {
-            const a = candidates[i];
-            if (used.has(a)) continue;
-            for (let j = i + 1; j < candidates.length; j++) {
-                const b = candidates[j];
-                if (used.has(b) || a.matchKey !== b.matchKey) continue;
-                if (!this.isDirectlyConnected(a, b)) continue;
-                used.add(a);
-                used.add(b);
-                pairs.push([a, b]);
-                break;
-            }
-        }
-        return pairs;
-    }
-
-    private isDirectlyConnected(a: TileView, b: TileView): boolean {
-        if (a.layer !== this.currentLayer || b.layer !== this.currentLayer) return false;
-        const grid = this.grids[this.currentLayer];
-        if (a.row === b.row) {
-            const start = Math.min(a.col, b.col) + 1;
-            const end = Math.max(a.col, b.col);
-            for (let col = start; col < end; col++) {
-                if (grid[a.row][col]) return false;
-            }
-            return true;
-        }
-        if (a.col === b.col) {
-            const start = Math.min(a.row, b.row) + 1;
-            const end = Math.max(a.row, b.row);
-            for (let row = start; row < end; row++) {
-                if (grid[row][a.col]) return false;
-            }
-            return true;
-        }
-        return false;
-    }
-
-    private mergePairs(
-        primary: Array<[TileView, TileView]>,
-        fallback: Array<[TileView, TileView]>,
-    ): Array<[TileView, TileView]> {
-        const result: Array<[TileView, TileView]> = [];
-        const used = new Set<TileView>();
-        for (const [a, b] of [...primary, ...fallback]) {
-            if (used.has(a) || used.has(b)) continue;
-            used.add(a);
-            used.add(b);
-            result.push([a, b]);
-        }
-        return result;
-    }
-
-    private mergePairGroups(
-        ...groups: Array<Array<[TileView, TileView]>>
-    ): Array<[TileView, TileView]> {
-        const result: Array<[TileView, TileView]> = [];
-        const used = new Set<TileView>();
-        for (const pairs of groups) {
-            for (const [a, b] of pairs) {
-                if (used.has(a) || used.has(b)) continue;
-                used.add(a);
-                used.add(b);
-                result.push([a, b]);
-            }
-        }
-        return result;
+        this.inputLocked = false;
+        this.ensurePlayable();
     }
 
     private updateCombo(amount: number): void {
